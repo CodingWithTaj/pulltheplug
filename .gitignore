@@ -1,1 +1,3 @@
 *.db
+recorder.so
+pulltheplug.trace*
