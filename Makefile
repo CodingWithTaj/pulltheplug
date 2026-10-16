@@ -7,8 +7,14 @@ recorder.so: recorder/recorder.c
 
 test: recorder.so
 	tests/test_recorder.sh
+	tests/test_replay.sh
 
 clean:
 	rm -f recorder.so pulltheplug.trace pulltheplug.trace.data
 
-.PHONY: test clean
+demo: recorder.so
+	rm -f pulltheplug.trace pulltheplug.trace.data
+	LD_PRELOAD=$(CURDIR)/recorder.so python3 examples/checkout/app.py
+	-python3 replay.py pulltheplug.trace --invariants examples/checkout/invariants.sql
+
+.PHONY: test demo clean

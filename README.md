@@ -2,7 +2,7 @@
 
 Pull the plug on your app thousands of times and find out what data it loses, before your users do.
 
-This is an early-stage project. Only the recorder exists so far.
+This is an early-stage project. The recorder, replayer and checker work; torn writes and directory fsync are still to come.
 
 ## The problem
 
@@ -11,10 +11,9 @@ SQLite itself is crash-safe: a committed transaction survives a power cut. Apps 
 ## How it works
 
 1. **Record.** An `LD_PRELOAD` library logs every open, write, truncate, fsync, unlink and rename your program does on SQLite files (`.db`, `.sqlite`, `.sqlite3`, `-wal`, `-journal`), along with the bytes written.
-2. **Replay.** Rebuild the files as they could look after a crash at each point in the trace, keeping only what was fsynced.
+2. **Replay.** Rebuild the files as they look if the power dies right after each fsync in the trace, and after the last operation.
 3. **Check.** Run your invariants (plain SQL queries that should return no rows) against each crashed copy and report the ones that fail.
 
-Record is done. Replay and check are next.
 
 ## Try the recorder
 
@@ -53,13 +52,43 @@ sqlite3 shop.db < invariants.sql
 98|3
 ```
 
-Three orders were recorded but only two widgets left stock. Making pulltheplug find this on its own, without you choosing where to crash, is the goal of M2.
+Three orders were recorded but only two widgets left stock. Making pulltheplug find this on its own, without you choosing where to crash, is what `replay.py` does.
+
+## Replay and check
+
+```sh
+make demo
+```
+
+or by hand, after recording a run:
+
+```sh
+python3 replay.py pulltheplug.trace --invariants examples/checkout/invariants.sql
+```
+
+The data file defaults to `<trace>.data`. If the trace touches more than one database, pick one with `--db`. The exit status is 1 if any crash point breaks an invariant.
+
+On the checkout example it reports the crash points where an order was committed but its stock update wasn't, and prints the first one with the invariant and the rows that violated it:
+
+```
+  line 70    fsync shop.db-journal        fail
+  ...
+first failure: crash after trace line 70 (fsync shop.db-journal)
+invariant returned rows:
+    ...
+rows:
+    (100, 1)
+```
+
+A crash point is the state of the files after replaying the trace up to an fsync. Each one is written to a fresh temp directory and opened with SQLite, which rolls back a hot journal on its own, as it would when the app restarted. Points where the invariants can't run at all, such as before the tables exist, are marked `skip`.
+
+Replay assumes the recording started with no database files on disk, which is how the checkout example behaves.
 
 ## Status
 
 - M0: example app with a known crash bug (done)
 - M1: recorder (done)
-- M2: replay and check
+- M2: replay and check (done)
 - M3: torn writes, renames and directory fsync
 - M4: run on real projects
 
